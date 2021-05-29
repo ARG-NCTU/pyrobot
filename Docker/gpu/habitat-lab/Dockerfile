@@ -1,53 +1,112 @@
-# Base image
-FROM nvidia/cudagl:10.1-devel-ubuntu16.04
+FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04 
 
-# Setup basic packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
+ENV DEBIAN_FRONTEND noninteractive
+ENV LANG C.UTF-8
+ENV LC_ALL C.UTF-8
+ENV ROS_DISTRO melodic
+
+###################################### user #####################################
+ENV SHELL=/bin/bash \
+    USER=sis \
+    UID=1000 \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US.UTF-8
+
+ENV HOME=/home/${USER}
+
+RUN adduser --disabled-password \
+    --gecos "Default user" \
+    --uid ${UID} \
+    ${USER} 
+
+RUN echo "root:root" | chpasswd
+RUN echo "${USER}:111111" | chpasswd
+
+RUN apt-get update && apt-get install -y \
     curl \
-    vim \
-    ca-certificates \
-    libjpeg-dev \
-    libpng-dev \
-    libglfw3-dev \
-    libglm-dev \
-    libx11-dev \
-    libomp-dev \
-    libegl1-mesa-dev \
-    pkg-config \
-    wget \
-    zip \
-    unzip &&\
-    rm -rf /var/lib/apt/lists/*
+    lsb-release \
+    sudo \
+    software-properties-common  \
+    tzdata
 
-# Install conda
-RUN curl -o ~/miniconda.sh -O  https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh  &&\
-    chmod +x ~/miniconda.sh &&\
-    ~/miniconda.sh -b -p /opt/conda &&\
-    rm ~/miniconda.sh &&\
-    /opt/conda/bin/conda install numpy pyyaml scipy ipython mkl mkl-include &&\
-    /opt/conda/bin/conda clean -ya
-ENV PATH /opt/conda/bin:$PATH
+##################################### setting #####################################
+RUN chown -R ${USER}:${USER} ${HOME}/
+RUN echo "sis ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers
 
-# Install cmake
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.14.0/cmake-3.14.0-Linux-x86_64.sh
-RUN mkdir /opt/cmake
-RUN sh /cmake-3.14.0-Linux-x86_64.sh --prefix=/opt/cmake --skip-license
-RUN ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake
-RUN cmake --version
+# setup entrypoint
+COPY ./ros_entrypoint.sh /
 
-# Conda environment
-RUN conda create -n habitat python=3.6 cmake=3.14.0
+ENTRYPOINT ["/ros_entrypoint.sh"]
 
-# Setup habitat-sim
+USER ${USER}
+
+WORKDIR ${HOME}
+
+############################# LoCoBot and PyRobot ############################
+RUN curl 'https://raw.githubusercontent.com/facebookresearch/pyrobot/master/robots/LoCoBot/install/locobot_install_all.sh' > locobot_install_all.sh && chmod +x locobot_install_all.sh
+
+RUN chmod +x locobot_install_all.sh
+
+RUN ./locobot_install_all.sh -t full -p 3 -l interbotix
+
+RUN rm locobot_install_all.sh
+
+RUN pip install gtsam
+
+############################# Habitat install ##################################
 RUN git clone --branch stable https://github.com/facebookresearch/habitat-sim.git
-RUN /bin/bash -c ". activate habitat; cd habitat-sim; pip install -r requirements.txt; python setup.py install --headless"
+RUN sudo apt-get install -y --no-install-recommends python3-pip ## me
+RUN pip3 install --upgrade pip setuptools ## me
 
-# Install challenge specific habitat-lab
-RUN git clone --branch stable https://github.com/facebookresearch/habitat-lab.git
-RUN /bin/bash -c ". activate habitat; cd habitat-lab; pip install -e ."
+RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
+    cd ${HOME}/habitat-sim/ && pip3 install -r requirements.txt"
 
-# Silence habitat-sim logs
-ENV GLOG_minloglevel=2
-ENV MAGNUM_LOG="quiet"
+RUN sudo apt-get install -y libjpeg-dev \
+    libglm-dev \
+    libgl1-mesa-glx \
+    libegl1-mesa-dev \
+    mesa-utils \
+    xorg-dev \
+    freeglut3-dev \
+    libssl-dev
+
+RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
+    cd ${HOME}/habitat-sim/ && sudo python3 setup.py build_ext --parallel 3 install"
+
+RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
+    sudo apt install python3-netifaces && sudo pip3 install netifaces"
+
+RUN mv ${HOME}/pyrobot_catkin_ws/src/* ${HOME}/low_cost_ws/src && \
+    rm -rf ${HOME}/pyrobot_catkin_ws && rm -r ${HOME}/low_cost_ws/devel ${HOME}/low_cost_ws/build
+
+# Lab
+RUN git clone --branch stable https://github.com/facebookresearch/habitat-lab.git  
+
+# test data
+RUN /bin/bash -c "cd ${HOME}/habitat-lab && \
+    wget http://dl.fbaipublicfiles.com/habitat/habitat-test-scenes.zip && \
+    unzip habitat-test-scenes.zip && rm habitat-test-scenes.zip"    
+
+# Lab 
+RUN /bin/bash -c "cd ${HOME}/habitat-lab/ && pip3 install -r requirements.txt"
+
+RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
+    sudo pip3 install Cython \
+                      dataclasses\
+                      lmdb==0.98 \
+                      tb-nightly \
+                      webdataset==0.1.40\
+                      opencv-python"
+
+RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \    
+    pip3 uninstall gym -y && pip3 install gym==0.17.3"
+
+RUN /bin/bash -c "cd ${HOME}/habitat-lab && \
+    sudo python3 setup.py develop --all"
+
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility,display
+
+LABEL com.nvidia.volumes.needed="nvidia_driver"
+ENV PATH /usr/lib/nvidia/bin:${PATH}
+ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
+
