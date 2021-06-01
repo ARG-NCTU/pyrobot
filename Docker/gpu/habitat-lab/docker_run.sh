@@ -29,8 +29,7 @@ if dpkg --compare-versions 19.03 gt "$DOCKER_VER"; then
     fi
     DOCKER_OPTS="$DOCKER_OPTS --runtime=nvidia"
 else
-    #DOCKER_OPTS="$DOCKER_OPTS --gpus all"
-    echo "No GPU"
+    DOCKER_OPTS="$DOCKER_OPTS --gpus all"
 fi
 
 # Prevent executing "docker run" when xauth failed.
@@ -45,25 +44,19 @@ BASH_OPTION=bash
 docker run \
     -it \
     --rm \
-    -e DISPLAY=$DISPLAY --env="QT_X11_NO_MITSHM=1" \
+    -e DISPLAY=$DISPLAY\
     -e QT_X11_NO_MITSHM=1 \
     -e XAUTHORITY=$XAUTH \
-    -e ROS_MASTER_URI=$ROS_MASTER_URI \
-    -e ROS_IP=$ROS_IP \
     -v "$XAUTH:$XAUTH" \
     -v "/tmp/.X11-unix:/tmp/.X11-unix" \
     -v "/etc/localtime:/etc/localtime:ro" \
-    -v "/dev:/dev" \
     -v "/var/run/docker.sock:/var/run/docker.sock" \
-    -v "/usr/lib/nvidia:/usr/lib/nvidia" \
-    -v "/usr/lib/nvidia:/usr/lib/nvidia" \
-    -v "/home/$USER/pyrobot:/home/$USER/low_cost_ws/src/pyrobot" \
-    --name locobot \
+    -v "/home/$USER/pyrobot:/home/sis/pyrobot" \
+    --name locobot_habitat \
     --network host \
     --privileged \
     --security-opt seccomp=unconfined \
-    --device /dev/dri \
     $DOCKER_OPTS \
-    argsis/locobot:habitat_PC \
+    argnctu/locobot:habitat \
     $BASH_OPTION
 
