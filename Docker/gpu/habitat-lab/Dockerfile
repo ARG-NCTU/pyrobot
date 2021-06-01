@@ -27,11 +27,35 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     sudo \
     software-properties-common  \
-    tzdata
+    tzdata \
+    git \
+    python-pip \
+    python3-pip
 
-##################################### setting #####################################
+
+############################# LoCoBot and PyRobot ############################
+RUN curl 'https://raw.githubusercontent.com/facebookresearch/pyrobot/master/robots/LoCoBot/install/locobot_install_all.sh' > locobot_install_all.sh && chmod +x locobot_install_all.sh
+
+RUN chmod +x locobot_install_all.sh
+
+RUN ./locobot_install_all.sh -t sim_only -p 3 -l interbotix
+
+RUN rm locobot_install_all.sh
+RUN pip3 install -U pip setuptools
+RUN pip3 install gtsam
+
+############################# Habitat ##################################
+COPY ./install_habitat.sh ${HOME}
+RUN ${HOME}/install_habitat.sh
+RUN rm ${HOME}/install_habitat.sh
+
+##################################### setting ###################################################
 RUN chown -R ${USER}:${USER} ${HOME}/
-RUN echo "sis ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers
+RUN echo "${USER} ALL=(ALL)  ALL" > /etc/sudoers
+
+# Support of GPU
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 
 # setup entrypoint
 COPY ./ros_entrypoint.sh /
@@ -41,72 +65,3 @@ ENTRYPOINT ["/ros_entrypoint.sh"]
 USER ${USER}
 
 WORKDIR ${HOME}
-
-############################# LoCoBot and PyRobot ############################
-RUN curl 'https://raw.githubusercontent.com/facebookresearch/pyrobot/master/robots/LoCoBot/install/locobot_install_all.sh' > locobot_install_all.sh && chmod +x locobot_install_all.sh
-
-RUN chmod +x locobot_install_all.sh
-
-RUN ./locobot_install_all.sh -t full -p 3 -l interbotix
-
-RUN rm locobot_install_all.sh
-
-RUN pip install gtsam
-
-############################# Habitat install ##################################
-RUN git clone --branch stable https://github.com/facebookresearch/habitat-sim.git
-RUN sudo apt-get install -y --no-install-recommends python3-pip ## me
-RUN pip3 install --upgrade pip setuptools ## me
-
-RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
-    cd ${HOME}/habitat-sim/ && pip3 install -r requirements.txt"
-
-RUN sudo apt-get install -y libjpeg-dev \
-    libglm-dev \
-    libgl1-mesa-glx \
-    libegl1-mesa-dev \
-    mesa-utils \
-    xorg-dev \
-    freeglut3-dev \
-    libssl-dev
-
-RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
-    cd ${HOME}/habitat-sim/ && sudo python3 setup.py build_ext --parallel 3 install"
-
-RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
-    sudo apt install python3-netifaces && sudo pip3 install netifaces"
-
-RUN mv ${HOME}/pyrobot_catkin_ws/src/* ${HOME}/low_cost_ws/src && \
-    rm -rf ${HOME}/pyrobot_catkin_ws && rm -r ${HOME}/low_cost_ws/devel ${HOME}/low_cost_ws/build
-
-# Lab
-RUN git clone --branch stable https://github.com/facebookresearch/habitat-lab.git  
-
-# test data
-RUN /bin/bash -c "cd ${HOME}/habitat-lab && \
-    wget http://dl.fbaipublicfiles.com/habitat/habitat-test-scenes.zip && \
-    unzip habitat-test-scenes.zip && rm habitat-test-scenes.zip"    
-
-# Lab 
-RUN /bin/bash -c "cd ${HOME}/habitat-lab/ && pip3 install -r requirements.txt"
-
-RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \
-    sudo pip3 install Cython \
-                      dataclasses\
-                      lmdb==0.98 \
-                      tb-nightly \
-                      webdataset==0.1.40\
-                      opencv-python"
-
-RUN /bin/bash -c "source ${HOME}/pyenv_pyrobot_python3/bin/activate && \    
-    pip3 uninstall gym -y && pip3 install gym==0.17.3"
-
-RUN /bin/bash -c "cd ${HOME}/habitat-lab && \
-    sudo python3 setup.py develop --all"
-
-ENV NVIDIA_DRIVER_CAPABILITIES compute,utility,display
-
-LABEL com.nvidia.volumes.needed="nvidia_driver"
-ENV PATH /usr/lib/nvidia/bin:${PATH}
-ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
-
