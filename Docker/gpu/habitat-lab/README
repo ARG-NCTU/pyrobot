@@ -1,6 +1,7 @@
-The Dockerfile is from habitat-lab
+$ docker pull argnctu/locobot:habitat
 
-Or pull from DockerHub
-```
-$ docker pull docker fairembodied/habitat:latest
+There are two examples.
+One is pyrobot/examples/habitat/example1.py.
+The other is from https://aihabitat.org/docs/habitat-lab/quickstart.html.
+
 ```
